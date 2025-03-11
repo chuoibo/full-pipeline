@@ -1,9 +1,6 @@
 import asyncio
 import os
 import json
-from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from pydub import AudioSegment
 import edge_tts
@@ -11,20 +8,8 @@ import re
 import time
 from io import BytesIO
 from dotenv import load_dotenv
-from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
-
-app = FastAPI()
-app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 def get_last_word(text):
     matches = re.findall(r'[\w.]+', text)
@@ -43,9 +28,16 @@ def gemini_text_generator(query: str):
     
     abbreviations = {"e.g.", "i.e.", "w.r.t.", "etc."}
     pattern = re.compile(r'\.\s*')
+
+    prompt = f""" 
+        Câu câu nói đầu vào của người dùng đã được xử lý bằng công nghệ nhận diện giọng nói tự động, điều này có thể xảy ra nhiễu hoặc sai sót trong câu từ, phiên âm. 
+        Trước khi trả lời, hãy phân tích kỹ lưỡng ngữ cảnh tổng thể của câu nói đầu vào để đảm bảo câu trả lời chính xác và phù hợp:
+
+        Đây là câu nói đầu vào: {query}
+    """
     
     buffer = ""
-    for chunk in chat.send_message_stream(query):
+    for chunk in chat.send_message_stream(prompt):
         clean_text = chunk.text.replace("*", "")
         buffer += clean_text
         
@@ -108,7 +100,3 @@ async def text_to_speech_stream(query: str):
     if final_delay > 0:
         yield f"event: ttsEnd\ndata: {json.dumps({'message': 'TTS completed', 'delay': final_delay})}\n\n"
         await asyncio.sleep(final_delay)
-
-@app.get("/stream-tts")
-async def stream_tts(query: str = Query(..., description="The query to process")):
-    return StreamingResponse(text_to_speech_stream(query), media_type="text/event-stream")

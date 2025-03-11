@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech Service</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #4285f4;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+        button:hover {
+            background-color: #3367d6;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .transcript, .response {
+            min-height: 100px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        .status {
+            font-style: italic;
+            color: #666;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Speech-to-Text and Text-to-Speech Service</h1>
+    
+    <div class="container">
+        <div class="card">
+            <h2>Speech Recognition</h2>
+            <div class="controls">
+                <button id="startButton">Start Talking</button>
+                <button id="stopButton" disabled>Stop</button>
+            </div>
+            <div class="transcript" id="transcript"></div>
+            <div class="status" id="asrStatus">Ready</div>
+        </div>
+        
+        <div class="card">
+            <h2>Text Generation and Speech Synthesis</h2>
+            <div class="controls">
+                <button id="generateButton" disabled>Generate Response</button>
+            </div>
+            <div class="response" id="response"></div>
+            <div class="status" id="ttsStatus">Ready</div>
+        </div>
+    </div>
+
+    <script>
+        // DOM elements
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const generateButton = document.getElementById('generateButton');
+        const transcript = document.getElementById('transcript');
+        const response = document.getElementById('response');
+        const asrStatus = document.getElementById('asrStatus');
+        const ttsStatus = document.getElementById('ttsStatus');
+        
+        // WebSocket for ASR
+        let socket;
+        // Audio context and stream
+        let audioContext;
+        let mediaStream;
+        let processor;
+        let input;
+        
+        // Connect to the WebSocket server
+        function connectWebSocket() {
+            // Use the hostname where your ASR service is running
+            const wsUrl = `ws://${window.location.hostname}:5000`;
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = () => {
+                console.log('WebSocket connection established');
+                asrStatus.textContent = 'Connected to ASR service';
+            };
+            
+            socket.onclose = () => {
+                console.log('WebSocket connection closed');
+                asrStatus.textContent = 'Disconnected from ASR service';
+            };
+            
+            socket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                asrStatus.textContent = 'Error connecting to ASR service';
+            };
+            
+            socket.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.text) {
+                        transcript.textContent = data.text;
+                        // Enable generate button once we have text
+                        generateButton.disabled = false;
+                    }
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+        }
+        
+        // Start audio capture and processing
+        async function startCapture() {
+            try {
+                // Connect to WebSocket if not already connected
+                if (!socket || socket.readyState !== WebSocket.OPEN) {
+                    connectWebSocket();
+                }
+                
+                // Request microphone access
+                mediaStream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                });
+                
+                // Create audio context
+                audioContext = new AudioContext({
+                    sampleRate: 16000
+                });
+                
+                // Create processor node
+                processor = audioContext.createScriptProcessor(4096, 1, 1);
+                processor.onaudioprocess = processAudio;
+                
+                // Connect microphone to processor
+                input = audioContext.createMediaStreamSource(mediaStream);
+                input.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                // Update UI
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                asrStatus.textContent = 'Listening...';
+                transcript.textContent = '';
+                generateButton.disabled = true;
+                
+            } catch (error) {
+                console.error('Error starting audio capture:', error);
+                asrStatus.textContent = 'Error: Could not access microphone';
+            }
+        }
+        
+        // Process audio data
+        function processAudio(e) {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                // Get audio data from the first channel
+                const inputData = e.inputBuffer.getChannelData(0);
+                
+                // Convert to 16-bit PCM
+                const pcmData = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    pcmData[i] = Math.min(1, Math.max(-1, inputData[i])) * 0x7FFF;
+                }
+                
+                // Send to server
+                socket.send(pcmData.buffer);
+            }
+        }
+        
+        // Stop audio capture
+        function stopCapture() {
+            if (processor) {
+                processor.disconnect();
+                processor = null;
+            }
+            
+            if (input) {
+                input.disconnect();
+                input = null;
+            }
+            
+            if (mediaStream) {
+                mediaStream.getTracks().forEach(track => track.stop());
+                mediaStream = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            // Update UI
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            asrStatus.textContent = 'Stopped';
+        }
+        
+        // Generate response and TTS
+        async function generateResponse() {
+            try {
+                const text = transcript.textContent.trim();
+                if (!text) {
+                    return;
+                }
+                
+                // Update UI
+                generateButton.disabled = true;
+                ttsStatus.textContent = 'Generating response...';
+                response.textContent = '';
+                
+                // Send raw text to backend for processing and TTS
+                // All preprocessing happens on the server
+                const eventSource = new EventSource(`/tts/stream-tts?query=${encodeURIComponent(text)}`);
+                
+                let audioBuffer = [];
+                
+                eventSource.addEventListener('ttsUpdate', async (event) => {
+                    const data = JSON.parse(event.data);
+                    response.textContent += data.text + ' ';
+                    
+                    // Play audio
+                    const audioData = new Uint8Array(data.audio.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+                    const audioBlob = new Blob([audioData], { type: 'audio/mp3' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+                    const audio = new Audio(audioUrl);
+                    
+                    audioBuffer.push(audio);
+                    
+                    // Play the first audio in the buffer
+                    if (audioBuffer.length === 1) {
+                        playNextAudio();
+                    }
+                });
+                
+                eventSource.addEventListener('ttsEnd', (event) => {
+                    eventSource.close();
+                    ttsStatus.textContent = 'Completed';
+                    generateButton.disabled = false;
+                });
+                
+                eventSource.onerror = () => {
+                    eventSource.close();
+                    ttsStatus.textContent = 'Error generating response';
+                    generateButton.disabled = false;
+                };
+                
+                // Function to play audio sequentially
+                function playNextAudio() {
+                    if (audioBuffer.length === 0) return;
+                    
+                    const currentAudio = audioBuffer[0];
+                    currentAudio.onended = () => {
+                        URL.revokeObjectURL(currentAudio.src);
+                        audioBuffer.shift();
+                        playNextAudio();
+                    };
+                    
+                    currentAudio.play().catch(error => {
+                        console.error('Error playing audio:', error);
+                    });
+                }
+                
+            } catch (error) {
+                console.error('Error generating response:', error);
+                ttsStatus.textContent = 'Error: Could not generate response';
+                generateButton.disabled = false;
+            }
+        }
+        
+        // Event listeners
+        startButton.addEventListener('click', startCapture);
+        stopButton.addEventListener('click', stopCapture);
+        generateButton.addEventListener('click', generateResponse);
+        
+        // Initial WebSocket connection
+        window.addEventListener('load', connectWebSocket);
+    </script>
+</body>
+</html>

@@ -148,6 +148,10 @@
             margin-bottom: 10px;
         }
         
+        .processing {
+            background-color: #fff8e1 !important;
+        }
+        
         @keyframes pulse {
             0% {
                 opacity: 1;
@@ -222,6 +226,11 @@
         // Store all transcript chunks
         let transcriptChunks = [];
         
+        // New variables for handling final transcription
+        let pendingTranscriptions = false;
+        let finalTranscriptTimer = null;
+        let waitingForFinalResult = false;
+        
         // Connect to WebSocket server
         function connectWebSocket() {
             const wsUrl = `ws://${window.location.hostname}:5000`;
@@ -242,6 +251,25 @@
                         
                         // Store chunk for final result
                         transcriptChunks.push(response.text);
+                        
+                        // If we're waiting for final results, reset the timer
+                        if (waitingForFinalResult) {
+                            if (finalTranscriptTimer) {
+                                clearTimeout(finalTranscriptTimer);
+                            }
+                            
+                            finalTranscriptTimer = setTimeout(() => {
+                                if (waitingForFinalResult) {
+                                    const finalText = generateFinalTranscript();
+                                    if (finalText) {
+                                        // Automatically start TTS with the final transcript
+                                        startTTSStreaming(finalText);
+                                    }
+                                    waitingForFinalResult = false;
+                                    updateStatus('Connected', 'green');
+                                }
+                            }, 3000); // 3 second timeout
+                        }
                     }
                 } catch (error) {
                     console.error('Error parsing response:', error);
@@ -273,6 +301,13 @@
                 // Clear TTS output
                 textOutput.innerHTML = '';
                 audioPlayer.src = '';
+                
+                // Reset waiting state if it was active
+                waitingForFinalResult = false;
+                if (finalTranscriptTimer) {
+                    clearTimeout(finalTranscriptTimer);
+                    finalTranscriptTimer = null;
+                }
                 
                 // Request audio stream
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -342,17 +377,31 @@
                 audioContext = null;
             }
             
-            // Generate the final transcript and automatically start TTS
-            const finalText = generateFinalTranscript();
-            if (finalText) {
-                // Automatically start TTS with the final transcript
-                startTTSStreaming(finalText);
-            }
-            
             // Update UI
             startBtn.disabled = false;
             stopBtn.disabled = true;
-            updateStatus('Connected', 'green');
+            updateStatus('Waiting for final results...', 'orange');
+            
+            // Set the waiting flag and start a timer to generate final transcript
+            // if no more transcriptions arrive after a certain period
+            waitingForFinalResult = true;
+            
+            if (finalTranscriptTimer) {
+                clearTimeout(finalTranscriptTimer);
+            }
+            
+            finalTranscriptTimer = setTimeout(() => {
+                // If no new transcriptions have come in the last 3 seconds, consider it complete
+                if (waitingForFinalResult) {
+                    const finalText = generateFinalTranscript();
+                    if (finalText) {
+                        // Automatically start TTS with the final transcript
+                        startTTSStreaming(finalText);
+                    }
+                    waitingForFinalResult = false;
+                    updateStatus('Connected', 'green');
+                }
+            }, 3000); // 3 second timeout
         }
         
         // Generate and display the final transcript
@@ -377,7 +426,15 @@
         function addTranscript(text) {
             const entry = document.createElement('div');
             entry.className = 'transcript-entry';
-            entry.textContent = text;
+            
+            // If we're waiting for the final result, highlight this entry
+            if (waitingForFinalResult) {
+                entry.classList.add('processing');
+                entry.textContent = text + " (processing...)";
+            } else {
+                entry.textContent = text;
+            }
+            
             transcriptContent.appendChild(entry);
             
             // Scroll to bottom

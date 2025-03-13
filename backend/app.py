@@ -141,3 +141,6 @@ async def text_to_speech_stream(query: str):
 @app.get("/stream-tts")
 async def stream_tts(query: str = Query(..., description="The query to process")):
     return StreamingResponse(text_to_speech_stream(query), media_type="text/event-stream")
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)

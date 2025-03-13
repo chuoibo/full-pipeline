@@ -231,9 +231,40 @@
         let finalTranscriptTimer = null;
         let waitingForFinalResult = false;
         
+        // Function to clear all ASR-related caches and buffers
+        function clearASRCache() {
+            console.log('Clearing all ASR caches and buffers for a fresh start');
+            
+            // Clear all transcription data
+            transcriptChunks = [];
+            
+            // Clear all UI elements
+            transcriptContent.innerHTML = '';
+            finalTranscript.style.display = 'none';
+            finalTranscriptText.textContent = '';
+            textOutput.innerHTML = '';
+            audioPlayer.src = '';
+            
+            // Reset all flags
+            waitingForFinalResult = false;
+            pendingTranscriptions = false;
+            
+            // Clear any existing timers
+            if (finalTranscriptTimer) {
+                clearTimeout(finalTranscriptTimer);
+                finalTranscriptTimer = null;
+            }
+            
+            updateStatus('Ready for new recording', 'green');
+        }
+        
         // Connect to WebSocket server
         function connectWebSocket() {
+            // Original URL from your code
             const wsUrl = `ws://${window.location.hostname}:5000`;
+            
+            // For debugging - log the URL we're trying to connect to
+            console.log("Connecting to WebSocket at:", wsUrl);
             
             socket = new WebSocket(wsUrl);
             
@@ -267,8 +298,11 @@
                                     }
                                     waitingForFinalResult = false;
                                     updateStatus('Connected', 'green');
+                                    
+                                    // Clear all ASR caches and buffers for a fresh start
+                                    clearASRCache();
                                 }
-                            }, 3000); // 3 second timeout
+                            }, 3000); // 4 second timeout
                         }
                     }
                 } catch (error) {
@@ -293,21 +327,8 @@
         // Start recording audio
         async function startRecording() {
             try {
-                // Clear previous transcripts
-                transcriptContent.innerHTML = '';
-                finalTranscript.style.display = 'none';
-                transcriptChunks = [];
-                
-                // Clear TTS output
-                textOutput.innerHTML = '';
-                audioPlayer.src = '';
-                
-                // Reset waiting state if it was active
-                waitingForFinalResult = false;
-                if (finalTranscriptTimer) {
-                    clearTimeout(finalTranscriptTimer);
-                    finalTranscriptTimer = null;
-                }
+                // Clear all ASR-related caches and start fresh
+                clearASRCache();
                 
                 // Request audio stream
                 audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -391,7 +412,7 @@
             }
             
             finalTranscriptTimer = setTimeout(() => {
-                // If no new transcriptions have come in the last 3 seconds, consider it complete
+                // If no new transcriptions have come in the last 4 seconds, consider it complete
                 if (waitingForFinalResult) {
                     const finalText = generateFinalTranscript();
                     if (finalText) {
@@ -400,8 +421,11 @@
                     }
                     waitingForFinalResult = false;
                     updateStatus('Connected', 'green');
+                    
+                    // Clear all ASR caches and buffers for a fresh start
+                    clearASRCache();
                 }
-            }, 3000); // 3 second timeout
+            }, 3000); // 4 second timeout
         }
         
         // Generate and display the final transcript
@@ -494,10 +518,8 @@
             eventSource.onerror = (error) => {
                 console.error('EventSource failed:', error);
                 eventSource.close();
-                updateTTSStatus('TTS Connection Error', 'red');
-                setTimeout(() => {
-                    updateTTSStatus('Ready', '#ccc');
-                }, 3000);
+                // Immediately update status without waiting
+                updateTTSStatus('Ready', '#ccc');
             };
         }
         
@@ -540,10 +562,8 @@
                     if (audioQueue.length > 0) {
                         playNextAudio();
                     } else if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-                        updateTTSStatus('TTS Complete', 'green');
-                        setTimeout(() => {
-                            updateTTSStatus('Ready', '#ccc');
-                        }, 3000);
+                        // Immediately update status without waiting
+                        updateTTSStatus('Ready', '#ccc');
                     }
                 };
             }).catch(error => {
@@ -566,13 +586,15 @@
             if (!socket || socket.readyState !== WebSocket.OPEN) {
                 connectWebSocket();
                 
+                // Increase timeout to 3 seconds to give more time for connection
                 setTimeout(() => {
                     if (socket && socket.readyState === WebSocket.OPEN) {
                         startRecording();
                     } else {
+                        console.error("WebSocket connection failed. Current state:", socket ? socket.readyState : "No socket");
                         updateStatus('Connection Failed', 'red');
                     }
-                }, 1000);
+                }, 3000); // Increased from 1000ms to 3000ms
             } else {
                 startRecording();
             }

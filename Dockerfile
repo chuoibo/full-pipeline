@@ -14,9 +14,14 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/ ./backend/
-COPY frontend/ ./frontend/
+COPY scripts/dev.sh ./scripts/
+
+COPY backend/asr.py ./backend/
+COPY backend/app.py ./backend/
+
+COPY frontend/index.html ./frontend/
 
 EXPOSE ${PORT}
+EXPOSE 5000
 
-CMD ["sh", "-c", "uvicorn backend.app:app --host ${HOST} --port ${PORT}"]
+CMD ["sh", "scripts/dev.sh"]

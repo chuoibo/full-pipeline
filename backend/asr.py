@@ -26,8 +26,8 @@ class ASRWebSocketServer:
         self.executors = {}  
         self.loops = {}
         
-        self.chunk_duration_ms = 1000  
-        self.chunk_size_bytes = int(self.sample_rate * 2 * (self.chunk_duration_ms / 1000)) 
+        self.processing_interval = 1.0
+        self.silence_threshold = 1.0
 
     @staticmethod
     def create_wav_header(sample_rate, channels, bits_per_sample, data_length):
@@ -52,7 +52,6 @@ class ASRWebSocketServer:
             audio_frame = audio_frame + b'\x00' * (self.frame_size * 2 - len(audio_frame))
         return audio_frame[:self.frame_size * 2]
 
-
     async def process_audio_segment(self, client_id, websocket, audio_data):
         if not audio_data:
             return
@@ -63,12 +62,11 @@ class ASRWebSocketServer:
         try:
             async with websockets.connect('wss://asr.gpu.rdhasaki.com/se') as asr_websocket:
                 await asr_websocket.send(wav_data)
-                
                 response = await asr_websocket.recv()
                 
                 try:
                     response_json = json.loads(response)
-                    if isinstance(response_json, dict) and "text" in response_json:
+                    if "text" in response_json:
                         logger.info(f"Speech recognized for client {client_id}: {response_json['text']}")
                         await websocket.send(json.dumps(response_json))
                         logger.info(f"Sent transcription to client {client_id}")
@@ -76,17 +74,12 @@ class ASRWebSocketServer:
                         logger.warning(f"Unexpected response format: {response_json}")
                 except json.JSONDecodeError:
                     logger.error(f"Failed to decode JSON response: {response}")
-                except Exception as inner_e:
-                    logger.error(f"Error processing response: {inner_e}, Response: {response[:100]}")
                 
-                try:
+                finally:
                     await asr_websocket.send(b'')
-                except Exception as close_e:
-                    logger.error(f"Error closing ASR connection: {close_e}")
                 
         except Exception as e:
             logger.error(f"Error in ASR service communication: {e}")
-
 
     def process_audio_frames(self, client_id, websocket, frames):
         if frames and client_id in self.loops:
@@ -101,7 +94,6 @@ class ASRWebSocketServer:
         self.loops[client_id] = loop
         loop.run_forever()
         logger.info(f"Event loop for client {client_id} stopped")
-     
 
     async def handle_client(self, websocket):
         client_id = id(websocket)
@@ -109,7 +101,10 @@ class ASRWebSocketServer:
         self.clients[client_id] = {
             'speech_detected': False,
             'last_process_time': time.time(),
-            'speech_buffer': bytearray()
+            'speech_buffer': bytearray(),
+            'speech_start_time': None,
+            'last_speech_time': None,
+            'silence_start_time': None
         }
         
         self.executors[client_id] = ThreadPoolExecutor(max_workers=1)
@@ -118,28 +113,31 @@ class ASRWebSocketServer:
         logger.info(f"New client connected: {client_id}")
         
         try:
-            while True:
-                message = await websocket.receive_bytes()
+            async for message in websocket:
                 client = self.clients[client_id]
+                current_time = time.time()
                 frame_for_vad = self.convert_buffer_size(message)
-                    
+                
                 try:
                     is_speech = self.vad.is_speech(frame_for_vad, self.sample_rate)
                     
                     if is_speech:
+                        client['silence_start_time'] = None
+                        
                         if not client['speech_detected']:
                             logger.debug(f"Speech started for client {client_id}")
                             client['speech_detected'] = True
                             client['speech_buffer'] = bytearray()
-                            client['last_process_time'] = time.time()
+                            client['speech_start_time'] = current_time
+                            client['last_process_time'] = current_time
+                        
+                        client['last_speech_time'] = current_time
                         
                         client['speech_buffer'].extend(message)
                         
-                        current_time = time.time()
-                        if (len(client['speech_buffer']) >= self.chunk_size_bytes or 
-                            current_time - client['last_process_time'] >= 1.0):
-                            
-                            logger.info(f"Processing 1-second chunk of {len(client['speech_buffer'])} bytes for client {client_id}")
+                        if current_time - client['last_process_time'] >= self.processing_interval:
+                            speech_duration = current_time - client['speech_start_time']
+                            logger.info(f"Processing {speech_duration:.2f}s accumulated chunk of {len(client['speech_buffer'])} bytes for client {client_id}")
                             
                             self.process_audio_frames(
                                 client_id, 
@@ -147,21 +145,35 @@ class ASRWebSocketServer:
                                 bytes(client['speech_buffer'])
                             )
                             
-                            client['speech_buffer'] = bytearray()
                             client['last_process_time'] = current_time
-                
+                    else:
+                        logging.info('No speech detected ...')
+                        if client['speech_detected']:
+                            if client['silence_start_time'] is None:
+                                client['silence_start_time'] = current_time
+                            
+                            logging.info(f"Silence time: {current_time - client['silence_start_time']}s")
+
+                            if (current_time - client['silence_start_time'] >= self.silence_threshold):
+                                logger.debug(f"Silence detected for {self.silence_threshold}s, resetting buffer for client {client_id}")
+                                client['speech_detected'] = False
+                                client['speech_buffer'] = bytearray()
+                                client['speech_start_time'] = None
+                                client['last_speech_time'] = None
+                                client['silence_start_time'] = None
+                            else:
+                                client['speech_buffer'].extend(message)
+                                
+                        
                 except Exception as e:
                     logger.error(f"Error processing frame: {e}")
-            
-        except websockets.exceptions.ConnectionClosed:
-            logger.info(f"WebSocket connection closed for client {client_id}")
-        except Exception as e:
-            logger.error(f"Error receiving message: {e}")
                 
+        except websockets.exceptions.ConnectionClosed:
+            logger.info(f"Client disconnected: {client_id}")
         except Exception as e:
             logger.error(f"Error occurred with client {client_id}: {e}")
         finally:
-
+            
             if client_id in self.clients:
                 del self.clients[client_id]
             

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Speech Processing App</title>
+    <title>Speech Transcription with Text-to-Speech</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -12,310 +12,462 @@
             padding: 20px;
             background-color: #f5f5f5;
         }
+        
         .container {
             background-color: white;
-            padding: 20px;
             border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
         }
+        
         h1 {
             color: #333;
             text-align: center;
         }
+        
         .controls {
             display: flex;
             justify-content: center;
+            gap: 15px;
             margin: 20px 0;
-            gap: 10px;
         }
+        
         button {
-            padding: 10px 20px;
+            padding: 12px 24px;
             border: none;
             border-radius: 5px;
-            cursor: pointer;
             font-size: 16px;
-            transition: all 0.3s;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
         }
-        button:hover {
-            opacity: 0.9;
-        }
+        
         #startBtn {
             background-color: #4CAF50;
             color: white;
         }
+        
+        #startBtn:hover {
+            background-color: #3e8e41;
+        }
+        
         #stopBtn {
             background-color: #f44336;
             color: white;
-            display: none;
         }
-        .card {
+        
+        #stopBtn:hover {
+            background-color: #d32f2f;
+        }
+        
+        #statusIndicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: #ccc;
+            display: inline-block;
+            margin-right: 10px;
+        }
+        
+        .status {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        .transcript-container {
             margin: 20px 0;
+            background-color: #f9f9f9;
             padding: 15px;
             border-radius: 5px;
-            border-left: 5px solid #2196F3;
-            background-color: #f9f9f9;
-        }
-        .status {
-            text-align: center;
-            margin: 10px 0;
-            font-weight: bold;
-            color: #555;
-        }
-        #transcription {
-            min-height: 100px;
-            white-space: pre-wrap;
-        }
-        #response {
-            min-height: 100px;
-            max-height: 300px;
+            border: 1px solid #ddd;
+            min-height: 200px;
+            max-height: 400px;
             overflow-y: auto;
-            white-space: pre-wrap;
         }
-        .audio-controls {
+        
+        .transcript-entry {
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        
+        .final-transcript {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f5e9;
+            border-radius: 5px;
+            border: 1px solid #a5d6a7;
+            font-weight: 500;
+        }
+        
+        .recording #statusIndicator {
+            background-color: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .tts-section {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+        
+        .tts-controls {
             display: flex;
-            justify-content: center;
-            margin-top: 10px;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
         }
-        #audioPlayer {
-            width: 100%;
-            margin-top: 10px;
+        
+        .text-output {
+            margin: 15px 0;
+            padding: 15px;
+            background-color: #e3f2fd;
+            border-radius: 5px;
+            border: 1px solid #bbdefb;
+            min-height: 100px;
+            max-height: 200px;
+            overflow-y: auto;
         }
-        .loading {
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 3px solid rgba(0,0,0,.3);
+        
+        #ttsStatusIndicator {
+            width: 15px;
+            height: 15px;
             border-radius: 50%;
-            border-top-color: #2196F3;
-            animation: spin 1s ease-in-out infinite;
-            margin-left: 10px;
+            background-color: #ccc;
+            display: inline-block;
+            margin-right: 10px;
         }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        
+        .tts-status {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        @keyframes pulse {
+            0% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+            100% {
+                opacity: 1;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Speech Processing App</h1>
+        <h1>Speech Transcription with Text-to-Speech</h1>
+        
+        <div class="status">
+            <span id="statusIndicator"></span>
+            <span id="statusText">Ready</span>
+        </div>
         
         <div class="controls">
-            <button id="startBtn">Start Speaking</button>
-            <button id="stopBtn">Stop</button>
+            <button id="startBtn">Start Recording</button>
+            <button id="stopBtn" disabled>Stop Recording</button>
         </div>
         
-        <div class="status" id="status">Ready</div>
-        
-        <div class="card">
-            <h3>Your Speech</h3>
-            <div id="transcription"></div>
-        </div>
-        
-        <div class="card">
-            <h3>Response</h3>
-            <div id="response"></div>
-            <div class="audio-controls">
-                <audio id="audioPlayer" controls></audio>
+        <div class="transcript-container">
+            <div id="transcriptContent"></div>
+            <div id="finalTranscript" class="final-transcript" style="display: none;">
+                <h3>Final Transcript:</h3>
+                <div id="finalTranscriptText"></div>
             </div>
         </div>
+        
+        <div class="tts-section">
+            <h3>Text-to-Speech Output</h3>
+            <div class="tts-status">
+                <span id="ttsStatusIndicator"></span>
+                <span id="ttsStatusText">Ready</span>
+            </div>
+            <div id="text-output" class="text-output"></div>
+            <audio id="audio-player" controls style="width: 100%;"></audio>
+        </div>
     </div>
-
+    
     <script>
-        // DOM elements
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
-        const status = document.getElementById('status');
-        const transcription = document.getElementById('transcription');
-        const response = document.getElementById('response');
-        const audioPlayer = document.getElementById('audioPlayer');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const statusText = document.getElementById('statusText');
+        const ttsStatusIndicator = document.getElementById('ttsStatusIndicator');
+        const ttsStatusText = document.getElementById('ttsStatusText');
+        const transcriptContent = document.getElementById('transcriptContent');
+        const finalTranscript = document.getElementById('finalTranscript');
+        const finalTranscriptText = document.getElementById('finalTranscriptText');
+        const textOutput = document.getElementById('text-output');
+        const audioPlayer = document.getElementById('audio-player');
         
-        // WebSocket connection for ASR
-        let socket;
-        let mediaRecorder;
-        let audioContext;
-        let audioStream;
+        // WebSocket connection
+        let socket = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let audioStream = null;
         let isRecording = false;
-        let transcriptionText = "";
         
-        // Audio queue for TTS playback
+        // TTS variables
         let audioQueue = [];
         let isPlaying = false;
+        let eventSource = null;
         
-        // Initialize audio
-        async function initAudio() {
-            try {
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                audioContext = new AudioContext();
-                
-                status.textContent = "Audio initialized";
-                startBtn.disabled = false;
-            } catch (error) {
-                console.error("Error initializing audio:", error);
-                status.textContent = "Error: Could not access microphone";
-            }
-        }
+        // Store all transcript chunks
+        let transcriptChunks = [];
         
-        // Start recording
-        function startRecording() {
-            if (!audioStream) {
-                status.textContent = "Error: Audio not initialized";
-                return;
-            }
-            
-            // Clear previous transcription text
-            transcriptionText = "";
-            transcription.textContent = "";
-            
-            // Setup WebSocket
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${protocol}//${window.location.host}/asr`;
+        // Connect to WebSocket server
+        function connectWebSocket() {
+            const wsUrl = `ws://${window.location.hostname}:5000`;
             
             socket = new WebSocket(wsUrl);
             
-            socket.onopen = () => {
-                status.textContent = "Connected. Listening...";
+            socket.onopen = function() {
+                console.log('WebSocket connection established');
+                updateStatus('Connected', 'green');
+            };
+            
+            socket.onmessage = function(event) {
+                try {
+                    const response = JSON.parse(event.data);
+                    if (response.text && response.text.trim() !== '') {
+                        // Add to ongoing transcript display
+                        addTranscript(response.text);
+                        
+                        // Store chunk for final result
+                        transcriptChunks.push(response.text);
+                    }
+                } catch (error) {
+                    console.error('Error parsing response:', error);
+                }
+            };
+            
+            socket.onclose = function() {
+                console.log('WebSocket connection closed');
+                updateStatus('Disconnected', '#ccc');
+                if (isRecording) {
+                    stopRecording();
+                }
+            };
+            
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+                updateStatus('Connection Error', 'red');
+            };
+        }
+        
+        // Start recording audio
+        async function startRecording() {
+            try {
+                // Clear previous transcripts
+                transcriptContent.innerHTML = '';
+                finalTranscript.style.display = 'none';
+                transcriptChunks = [];
                 
-                // Set up media recorder
-                mediaRecorder = new MediaRecorder(audioStream);
+                // Clear TTS output
+                textOutput.innerHTML = '';
+                audioPlayer.src = '';
                 
-                // Process audio chunks
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-                        event.data.arrayBuffer().then(buffer => {
-                            socket.send(buffer);
-                        });
+                // Request audio stream
+                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                
+                // Connect and set up recording
+                const source = audioContext.createMediaStreamSource(audioStream);
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                // Connect nodes
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                // Set recording flag
+                isRecording = true;
+                document.body.classList.add('recording');
+                
+                // Update UI
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                updateStatus('Recording', 'red');
+                
+                // Process audio data
+                processor.onaudioprocess = function(e) {
+                    if (!isRecording) return;
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    
+                    // Convert float32 to int16
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        pcmData[i] = Math.min(1, Math.max(-1, inputData[i])) * 0x7FFF;
+                    }
+                    
+                    // Send audio data to server if connection is open
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        socket.send(pcmData.buffer);
                     }
                 };
                 
-                // Start recording
-                mediaRecorder.start(100); // Capture in 100ms chunks
-                isRecording = true;
-                
-                // Update UI
-                startBtn.style.display = 'none';
-                stopBtn.style.display = 'inline-block';
-            };
-            
-            socket.onmessage = (event) => {
-                const data = JSON.parse(event.data);
-                if (data.text) {
-                    // Accumulate all text chunks into one string
-                    transcriptionText += " " + data.text;
-                    transcription.textContent = transcriptionText.trim();
-                }
-            };
-            
-            socket.onerror = (error) => {
-                console.error("WebSocket error:", error);
-                status.textContent = "Error in connection";
-            };
-            
-            socket.onclose = () => {
-                if (isRecording) {
-                    stopRecording();
-                    status.textContent = "Connection closed";
-                }
-            };
+            } catch (error) {
+                console.error('Error starting recording:', error);
+                updateStatus('Recording Error', 'red');
+            }
         }
         
         // Stop recording
         function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
-                
-                // Update UI
-                stopBtn.style.display = 'none';
-                startBtn.style.display = 'inline-block';
-                status.textContent = "Processing...";
-                
-                // Close WebSocket
-                if (socket && socket.readyState === WebSocket.OPEN) {
-                    socket.close();
-                }
-                
-                // Generate response with the complete accumulated text
-                const finalText = transcriptionText.trim();
-                if (finalText) {
-                    console.log("Final transcription:", finalText);
-                    // Only now do we process the complete text and send it to TTS
-                    generateResponse(finalText);
-                } else {
-                    status.textContent = "No speech detected";
-                }
+            if (!isRecording) return;
+            
+            isRecording = false;
+            document.body.classList.remove('recording');
+            
+            // Stop all tracks in the audio stream
+            if (audioStream) {
+                audioStream.getTracks().forEach(track => track.stop());
+                audioStream = null;
             }
+            
+            // Close audio context
+            if (audioContext) {
+                if (audioContext.state !== 'closed') {
+                    audioContext.close();
+                }
+                audioContext = null;
+            }
+            
+            // Generate the final transcript and automatically start TTS
+            const finalText = generateFinalTranscript();
+            if (finalText) {
+                // Automatically start TTS with the final transcript
+                startTTSStreaming(finalText);
+            }
+            
+            // Update UI
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+            updateStatus('Connected', 'green');
         }
         
-        // Generate TTS response
-        function generateResponse(text) {
-            // Clear previous response
-            response.innerHTML = '';
-            audioQueue = [];
+        // Generate and display the final transcript
+        function generateFinalTranscript() {
+            if (transcriptChunks.length === 0) return null;
+            
+            // Just use the last (most complete) transcript chunk instead of joining all chunks
+            const finalText = transcriptChunks[transcriptChunks.length - 1];
+            
+            // Display the final transcript
+            finalTranscriptText.textContent = finalText;
+            finalTranscript.style.display = 'block';
+            
+            // Scroll to final transcript
+            finalTranscript.scrollIntoView({ behavior: 'smooth' });
+            
+            // Return the final text for TTS processing
+            return finalText;
+        }
+        
+        // Add transcript to the display
+        function addTranscript(text) {
+            const entry = document.createElement('div');
+            entry.className = 'transcript-entry';
+            entry.textContent = text;
+            transcriptContent.appendChild(entry);
+            
+            // Scroll to bottom
+            transcriptContent.scrollTop = transcriptContent.scrollHeight;
+        }
+        
+        // Update status display
+        function updateStatus(text, color) {
+            statusText.textContent = text;
+            statusIndicator.style.backgroundColor = color;
+        }
+        
+        // Update TTS status display
+        function updateTTSStatus(text, color) {
+            ttsStatusText.textContent = text;
+            ttsStatusIndicator.style.backgroundColor = color;
+        }
+        
+        // TTS Functions
+        function startTTSStreaming(text) {
+            if (eventSource) {
+                eventSource.close(); // Close any existing connection
+            }
+            
+            if (!text) {
+                console.error('No text to convert to speech');
+                return;
+            }
+            
+            // Clear previous TTS output
+            textOutput.innerHTML = '';
             audioPlayer.src = '';
+            audioQueue = [];
             isPlaying = false;
             
-            // Show loading indicator
-            const loadingElement = document.createElement('div');
-            loadingElement.className = 'loading';
-            response.appendChild(loadingElement);
-            response.appendChild(document.createTextNode(' Generating response...'));
+            updateTTSStatus('Processing...', 'blue');
             
-            // Clean up the text - important to use the accumulated text from all ASR chunks
-            const cleanText = text.trim();
-            console.log("Sending complete text for processing:", cleanText);
+            // Connect to the FastAPI backend running on port 8000
+            const backendUrl = `http://${window.location.hostname}:8000/stream-tts?query=${encodeURIComponent(text)}`;
+            eventSource = new EventSource(backendUrl);
             
-            // Create a new EventSource for TTS streaming
-            const sse = new EventSource(`${window.location.origin}/stream-tts?query=${encodeURIComponent(cleanText)}`);
-                        
-            sse.addEventListener('ttsUpdate', (event) => {
-                const data = JSON.parse(event.data);
-                
-                // Remove loading indicator if it's the first update
-                if (loadingElement.parentNode) {
-                    response.removeChild(loadingElement);
+            eventSource.onopen = () => {
+                console.log('EventSource connected');
+                updateTTSStatus('TTS Streaming Active', '#2196F3');
+            };
+            
+            eventSource.addEventListener('ttsUpdate', function (event) {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('TTS Update received');
+                    updateTTS(data);
+                } catch (error) {
+                    console.error('Error parsing TTS update:', error);
                 }
-                
-                // Update response text with paragraph elements
-                const paragraph = document.createElement('p');
-                paragraph.textContent = data.text;
-                response.appendChild(paragraph);
-                
-                // Process audio
-                const audioBytes = hexToBytes(data.audio);
-                const blob = new Blob([audioBytes], { type: 'audio/mp3' });
-                const url = URL.createObjectURL(blob);
-                
-                // Add to queue with duration
-                audioQueue.push({ url: url, duration: data.duration });
-                
-                // Start playing if not already playing
-                playNextAudio();
             });
             
-            sse.addEventListener('ttsEnd', (event) => {
-                sse.close();
-                status.textContent = "Ready";
-                
-                // Reset transcription for next recording
-                transcriptionText = "";
-                transcription.textContent = "";
-            });
-            
-            sse.onerror = (error) => {
-                console.error("SSE error:", error);
-                sse.close();
-                
-                // Remove loading indicator if it still exists
-                if (loadingElement.parentNode) {
-                    response.removeChild(loadingElement);
-                }
-                
-                response.textContent = "Error generating response";
-                status.textContent = "Ready";
+            eventSource.onerror = (error) => {
+                console.error('EventSource failed:', error);
+                eventSource.close();
+                updateTTSStatus('TTS Connection Error', 'red');
+                setTimeout(() => {
+                    updateTTSStatus('Ready', '#ccc');
+                }, 3000);
             };
         }
         
-        // Play the next audio in queue
+        function updateTTS(data) {
+            // Display the text chunk from the backend
+            const paragraph = document.createElement('p');
+            paragraph.textContent = data.text;
+            textOutput.appendChild(paragraph);
+            
+            // Scroll text output to bottom
+            textOutput.scrollTop = textOutput.scrollHeight;
+            
+            // Process the audio data
+            const audioBytes = hexToBytes(data.audio);
+            const blob = new Blob([audioBytes], { type: 'audio/mp3' });
+            const audioUrl = URL.createObjectURL(blob);
+            
+            // Add to queue with duration information from backend
+            audioQueue.push({ 
+                url: audioUrl, 
+                duration: data.duration 
+            });
+            
+            // Play audio if not already playing
+            playNextAudio();
+        }
+        
         function playNextAudio() {
             if (isPlaying || audioQueue.length === 0) return;
             
@@ -325,10 +477,17 @@
             
             audioPlayer.play().then(() => {
                 audioPlayer.onended = () => {
-                    // Clean up and play next
                     URL.revokeObjectURL(audioPlayer.src);
                     isPlaying = false;
-                    playNextAudio();
+                    
+                    if (audioQueue.length > 0) {
+                        playNextAudio();
+                    } else if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+                        updateTTSStatus('TTS Complete', 'green');
+                        setTimeout(() => {
+                            updateTTSStatus('Ready', '#ccc');
+                        }, 3000);
+                    }
                 };
             }).catch(error => {
                 console.error('Audio playback failed:', error);
@@ -337,21 +496,54 @@
             });
         }
         
-        // Helper: Convert hex string to byte array
         function hexToBytes(hex) {
             const bytes = new Uint8Array(hex.length / 2);
             for (let i = 0; i < hex.length; i += 2) {
-                bytes[i / 2] = parseInt(hex.substring(i, i + 2), 16);
+                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
             }
             return bytes;
         }
         
         // Event listeners
-        startBtn.addEventListener('click', startRecording);
-        stopBtn.addEventListener('click', stopRecording);
+        startBtn.addEventListener('click', function() {
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                connectWebSocket();
+                
+                setTimeout(() => {
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        startRecording();
+                    } else {
+                        updateStatus('Connection Failed', 'red');
+                    }
+                }, 1000);
+            } else {
+                startRecording();
+            }
+        });
         
-        // Initialize on page load
-        window.addEventListener('load', initAudio);
+        stopBtn.addEventListener('click', function() {
+            stopRecording();
+        });
+        
+        window.addEventListener('load', function() {
+            connectWebSocket();
+            updateTTSStatus('Ready', '#ccc');
+        });
+        
+        // Handle page unload
+        window.addEventListener('beforeunload', function() {
+            if (isRecording) {
+                stopRecording();
+            }
+            
+            if (socket) {
+                socket.close();
+            }
+            
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
     </script>
 </body>
 </html>

@@ -13,6 +13,14 @@ from io import BytesIO
 from dotenv import load_dotenv
 import uvicorn
 from fastapi.staticfiles import StaticFiles
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+logger = logging.getLogger('tts_server')
 
 load_dotenv()
 
@@ -33,7 +41,7 @@ def preprocess_text(text):
 
 def gemini_text_generator(query: str):
     # Start timing when Gemini receives the query
-    
+    logging.info(f"Received query: {query}")
     client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'), vertexai=False)
     chat = client.chats.create(model="gemini-2.0-flash-001")
     
@@ -57,7 +65,6 @@ def gemini_text_generator(query: str):
             else:
                 break
     
-    # If there's any remaining text in the buffer after processing all chunks
     if buffer.strip():
         yield buffer.strip()
 
@@ -69,7 +76,7 @@ async def text_to_speech_stream(query: str):
     for chunk in gen_text:
         
         if not chunk or not chunk.strip():
-            break
+            continue
         
         start_time_chunk = time.time()
         communicate = edge_tts.Communicate(chunk, voice)

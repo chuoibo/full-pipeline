@@ -14,14 +14,16 @@ COPY requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY scripts/dev.sh ./scripts/
+COPY script/dev.sh ./script/
 
 COPY backend/asr.py ./backend/
 COPY backend/app.py ./backend/
 
 COPY frontend/index.html ./frontend/
 
+COPY .env .
+
 EXPOSE ${PORT}
 EXPOSE 5000
 
-CMD ["sh", "scripts/dev.sh"]
+CMD ["sh", "script/dev.sh"]

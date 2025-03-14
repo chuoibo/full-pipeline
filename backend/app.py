@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import requests
+import json
 import uvicorn
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -40,10 +41,6 @@ def receive_response(query: str = Query(...)):
     processed_query = re.sub(r'\bunk\b', '', query)
     return processed_query
 
-@app.get("/stream-tts")
-async def stream_tts(query: str = Query(..., description="The query to process")):
-    return StreamingResponse(text_to_speech_stream(query), media_type="text/event-stream")
-
 
 @app.websocket("/asr-tts-full-pipeline")
 async def asr_tts_full_pipeline(websocket: WebSocket):
@@ -81,7 +78,19 @@ async def asr_tts_full_pipeline(websocket: WebSocket):
             tts_stream = text_to_speech_stream(processed_text)
             
             async for chunk in tts_stream:
-                await websocket.send_bytes(chunk)
+                if not chunk:
+                    continue
+                    
+                event_lines = chunk.split('\n')
+                data_line = next((line for line in event_lines if line.startswith('data: ')), None)
+                
+                if data_line:
+                    json_data = json.loads(data_line[6:]) 
+                    
+                    await websocket.send_json({
+                        "type": "tts_update",
+                        "data": json_data
+                    })
             
             await websocket.send_json({
                 "type": "tts_complete",
@@ -132,7 +141,6 @@ async def asr_tts_full_pipeline(websocket: WebSocket):
             await asr_client.disconnect()
             del active_asr_clients[client_id]
             logger.info(f"Cleaned up resources for client {client_id}")
-
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

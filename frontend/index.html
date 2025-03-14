@@ -60,6 +60,17 @@
             font-style: italic;
             color: #666;
         }
+        #textOutput {
+            margin-top: 15px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        #textOutput p {
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
@@ -69,6 +80,8 @@
         <div id="finalText">
             <i>Your processed text will appear here...</i>
         </div>
+        
+        <div id="textOutput"></div>
         
         <div class="audio-section">
             <h3>Audio Response</h3>
@@ -86,101 +99,64 @@
         // Elements
         const connectBtn = document.getElementById('connectBtn');
         const finalText = document.getElementById('finalText');
+        const textOutput = document.getElementById('textOutput');
         const audioPlayer = document.getElementById('audioPlayer');
         const audioStatus = document.getElementById('audioStatus');
         
         // WebSocket and state
         let ws = null;
-        let audioChunks = [];
-        let audioBlob = null;
-        let audioUrl = null;
-        let isReceivingTTS = false;
+        let audioQueue = [];
+        let isPlaying = false;
         
-        // Parse SSE format message
-        function parseSSE(data) {
-            const result = {};
-            const lines = data.split('\n');
-            
-            for (const line of lines) {
-                if (line.trim() === '') continue;
-                
-                if (line.startsWith('event:')) {
-                    result.event = line.substring(6).trim();
-                } else if (line.startsWith('data:')) {
-                    result.data = line.substring(5).trim();
-                    
-                    // Try to parse data as JSON if it looks like JSON
-                    if (result.data.startsWith('{') || result.data.startsWith('[')) {
-                        try {
-                            result.data = JSON.parse(result.data);
-                        } catch (e) {
-                            // Keep as string if it's not valid JSON
-                        }
-                    }
-                }
+        // Helper function to convert hex string to bytes
+        function hexToBytes(hex) {
+            const bytes = new Uint8Array(hex.length / 2);
+            for (let i = 0; i < hex.length; i += 2) {
+                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
             }
-            
-            return result;
+            return bytes;
         }
         
-        // Extract audio data from SSE message
-        function extractAudioFromSSE(sseData) {
-            const parsed = parseSSE(sseData);
+        // Process and play audio from the TTS update
+        function updateTTS(data) {
+            // Display the text chunk
+            const paragraph = document.createElement('p');
+            paragraph.textContent = data.text;
+            textOutput.appendChild(paragraph);
+            textOutput.scrollTop = textOutput.scrollHeight;
             
-            if (parsed.event === 'tts' && parsed.data) {
-                // If data is a base64 string
-                if (typeof parsed.data === 'string' && 
-                    (parsed.data.startsWith('data:audio') || 
-                     /^[A-Za-z0-9+/=]+$/.test(parsed.data))) {
-                    
-                    try {
-                        // Try to decode base64
-                        const binary = atob(parsed.data.replace(/^data:audio\/[^;]+;base64,/, ''));
-                        const array = new Uint8Array(binary.length);
-                        for (let i = 0; i < binary.length; i++) {
-                            array[i] = binary.charCodeAt(i);
-                        }
-                        return new Blob([array], { type: 'audio/wav' });
-                    } catch (e) {
-                        console.error(`Error decoding base64: ${e}`);
-                    }
-                }
-                
-                // If it's just raw data, convert to blob
-                return new Blob([parsed.data], { type: 'audio/wav' });
-            }
+            // Process audio
+            const audioBytes = hexToBytes(data.audio);
+            const blob = new Blob([audioBytes], { type: 'audio/mp3' });
+            const audioUrl = URL.createObjectURL(blob);
             
-            // For SSE messages that don't contain audio data
-            return null;
+            // Add to queue and try to play
+            audioQueue.push({ url: audioUrl, duration: data.duration });
+            playNextAudio();
         }
         
-        // Process audio chunks into a playable audio element
-        function processAudioChunks() {
-            try {
-                // Create a blob from all the chunks
-                audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        // Play the next audio in the queue
+        function playNextAudio() {
+            if (isPlaying || audioQueue.length === 0) return;
+            
+            isPlaying = true;
+            const nextAudio = audioQueue.shift();
+            audioPlayer.src = nextAudio.url;
+            
+            audioPlayer.play().then(() => {
+                audioStatus.textContent = `Playing audio... (${audioQueue.length} chunks remaining)`;
                 
-                // Create an object URL for the blob
-                if (audioUrl) {
-                    URL.revokeObjectURL(audioUrl);
-                }
-                audioUrl = URL.createObjectURL(audioBlob);
-                
-                // Set the audio source
-                audioPlayer.src = audioUrl;
-                audioStatus.textContent = "Audio ready. Press play to listen.";
-                
-                // Autoplay the audio
-                audioPlayer.play().then(() => {
-                    audioStatus.textContent = "Playing audio...";
-                }).catch(e => {
-                    console.error(`Autoplay prevented: ${e}`);
-                });
-                
-            } catch (error) {
-                console.error(`Error processing audio: ${error}`);
-                audioStatus.textContent = "Error processing audio.";
-            }
+                audioPlayer.onended = () => {
+                    isPlaying = false;
+                    URL.revokeObjectURL(audioPlayer.src);
+                    playNextAudio();
+                };
+            }).catch(error => {
+                console.error('Audio playback failed:', error);
+                isPlaying = false;
+                URL.revokeObjectURL(audioPlayer.src);
+                playNextAudio();
+            });
         }
         
         // Connect to WebSocket
@@ -189,6 +165,12 @@
             connectBtn.textContent = "Connected";
             finalText.innerHTML = "<i>Listening...</i>";
             audioStatus.textContent = "Waiting for speech...";
+            textOutput.innerHTML = "";
+            
+            // Reset audio state
+            audioQueue = [];
+            isPlaying = false;
+            audioPlayer.src = '';
             
             ws = new WebSocket(WS_URL);
             
@@ -200,13 +182,6 @@
                 connectBtn.disabled = false;
                 connectBtn.textContent = "Connect";
                 audioStatus.textContent = "Disconnected. Click 'Connect' to start.";
-                
-                // Reset audio player
-                if (audioUrl) {
-                    URL.revokeObjectURL(audioUrl);
-                    audioUrl = null;
-                }
-                audioPlayer.src = '';
             };
             
             ws.onerror = (error) => {
@@ -217,116 +192,76 @@
                 connectBtn.textContent = "Connect";
             };
             
-            ws.onmessage = async (event) => {
-                // Handle binary data (directly usable audio chunks)
-                if (event.data instanceof Blob) {
-                    if (isReceivingTTS) {
-                        audioChunks.push(event.data);
-                        audioStatus.textContent = `Receiving audio: ${audioChunks.length} chunks...`;
-                    }
-                    return;
-                }
-                
-                // Handle text data - could be JSON or SSE format
-                if (typeof event.data === 'string') {
-                    // Check if it's SSE format
-                    if (event.data.trim().startsWith('event:') || event.data.trim().startsWith('data:')) {
-                        console.log(`Received SSE formatted data`);
-                        
-                        // If we're actively receiving TTS data, extract the audio
-                        if (isReceivingTTS) {
-                            const audioBlob = extractAudioFromSSE(event.data);
-                            if (audioBlob) {
-                                audioChunks.push(audioBlob);
-                                audioStatus.textContent = `Receiving audio: ${audioChunks.length} chunks...`;
-                                return;
-                            }
-                        }
-                        
-                        // Try to parse the SSE message if it's not audio data
-                        const sseMessage = parseSSE(event.data);
-                        
-                        // Handle specific SSE events
-                        if (sseMessage.event === 'tts_complete' || sseMessage.event === 'complete') {
-                            isReceivingTTS = false;
-                            audioStatus.textContent = "Processing audio...";
-                            
-                            if (audioChunks.length > 0) {
-                                processAudioChunks();
-                            } else {
-                                audioStatus.textContent = "No audio received.";
-                            }
-                        }
-                        
-                        return;
-                    }
+            ws.onmessage = (event) => {
+                // All messages should now be JSON
+                try {
+                    const message = JSON.parse(event.data);
                     
-                    // Try to parse as JSON
-                    try {
-                        const message = JSON.parse(event.data);
-                        
-                        switch(message.type) {
-                            case 'transcription':
-                                finalText.innerHTML = `<i>Transcribing: "${message.data}"</i>`;
-                                break;
-                                
-                            case 'response':
-                                // This is the final processed text
-                                finalText.textContent = message.data;
-                                break;
-                                
-                            case 'tts_starting':
-                                isReceivingTTS = true;
-                                audioStatus.textContent = "Generating audio...";
-                                // Reset any previous audio
-                                audioChunks = [];
-                                if (audioUrl) {
-                                    URL.revokeObjectURL(audioUrl);
-                                    audioUrl = null;
-                                }
-                                audioPlayer.src = '';
-                                break;
-                                
-                            case 'tts_complete':
-                                isReceivingTTS = false;
-                                audioStatus.textContent = "Processing audio...";
-                                
-                                // Process received audio chunks
-                                if (audioChunks.length > 0) {
-                                    processAudioChunks();
-                                } else {
-                                    audioStatus.textContent = "No audio received.";
-                                }
-                                break;
-                                
-                            case 'error':
-                                audioStatus.textContent = `Error: ${message.data}`;
-                                break;
-                        }
-                        
-                    } catch (error) {
-                        // If it's not valid JSON and not SSE, log the error
-                        console.error(`Error processing message: ${error}`);
+                    switch(message.type) {
+                        case 'transcription':
+                            finalText.innerHTML = `<i>Transcribing: "${message.data}"</i>`;
+                            break;
+                            
+                        case 'response':
+                            // This is the final processed text
+                            finalText.textContent = message.data;
+                            // Clear previous text chunks when a new response starts
+                            textOutput.innerHTML = "";
+                            break;
+                            
+                        case 'tts_starting':
+                            audioStatus.textContent = "Generating audio...";
+                            // Reset audio queue
+                            audioQueue = [];
+                            isPlaying = false;
+                            break;
+                            
+                        case 'tts_update':
+                            // Handle TTS chunk with text and audio data
+                            updateTTS(message.data);
+                            break;
+                            
+                        case 'tts_complete':
+                            if (audioQueue.length === 0 && !isPlaying) {
+                                audioStatus.textContent = "Audio playback complete.";
+                            } else {
+                                audioStatus.textContent = `Finishing playback... (${audioQueue.length} chunks remaining)`;
+                            }
+                            break;
+                            
+                        case 'error':
+                            audioStatus.textContent = `Error: ${message.data}`;
+                            break;
+                            
+                        case 'status':
+                            if (message.data === 'ready') {
+                                audioStatus.textContent = "Ready for voice input.";
+                            }
+                            break;
                     }
+                } catch (error) {
+                    console.error(`Error processing message: ${error}`, event.data);
                 }
             };
-            
-            // Add audio player event listeners
-            audioPlayer.addEventListener('play', () => {
-                audioStatus.textContent = "Playing audio...";
-            });
-            
-            audioPlayer.addEventListener('pause', () => {
-                audioStatus.textContent = "Audio paused.";
-            });
-            
-            audioPlayer.addEventListener('ended', () => {
-                audioStatus.textContent = "Audio playback complete.";
-            });
         }
         
         // Connect button event listener
         connectBtn.addEventListener('click', connect);
+        
+        // Additional audio player event listeners
+        audioPlayer.addEventListener('play', () => {
+            if (!isPlaying) {
+                isPlaying = true;
+                audioStatus.textContent = "Playing audio...";
+            }
+        });
+        
+        audioPlayer.addEventListener('pause', () => {
+            if (isPlaying) {
+                isPlaying = false;
+                audioStatus.textContent = "Audio paused.";
+            }
+        });
     </script>
 </body>
 </html>

@@ -31,10 +31,12 @@ def gemini_text_generator(query: str):
     pattern = re.compile(r'[.!?:]\s*')
     
     preprocess_query = preprocess_text(query)
+
+    prompt = f"bạn trả lời chính xác ngắn gọn thôi nhé: {preprocess_query}"
     
     buffer = ""
     
-    for chunk in chat.send_message_stream(preprocess_query):
+    for chunk in chat.send_message_stream(prompt):
         clean_text = chunk.text.replace("*", "")
         buffer += clean_text
         

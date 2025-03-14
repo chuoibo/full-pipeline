@@ -5,7 +5,6 @@ import logging
 import pyaudio
 import queue
 
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -89,7 +88,6 @@ class ASRClient:
         self.stream.start_stream()
         logger.info("Started audio streaming")
         
-        # Start the audio sender task
         asyncio.create_task(self.audio_sender())
         
         return True
@@ -103,15 +101,9 @@ class ASRClient:
             logger.info("Stopped audio streaming")
     
     def set_transcription_callback(self, callback):
-        """Set a callback function that will be called with the final transcription"""
         self.transcription_callback = callback
             
     async def listen_continuously(self):
-        """
-        Continuously listen for transcriptions, calling the callback
-        whenever a final transcription is received (reset_session=True).
-        This method doesn't return until disconnect() is called.
-        """
         if not self.is_connected:
             logger.error("Not connected to ASR server")
             return
@@ -174,7 +166,6 @@ class ASRClient:
             
         return None
 
-# Example of how to use the continuous listening mode
 async def process_transcription(text):
     print(f"\nProcessing transcription: {text}")
 

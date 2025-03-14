@@ -3,626 +3,330 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Speech Transcription with Text-to-Speech</title>
+    <title>ASR-TTS System</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
+            font-family: Arial, sans-serif;
+            max-width: 600px;
             margin: 0 auto;
             padding: 20px;
-            background-color: #f5f5f5;
+            line-height: 1.6;
         }
-        
         .container {
-            background-color: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-        
-        h1 {
-            color: #333;
-            text-align: center;
-        }
-        
-        .controls {
             display: flex;
-            justify-content: center;
-            gap: 15px;
-            margin: 20px 0;
+            flex-direction: column;
+            gap: 20px;
         }
-        
-        button {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 5px;
-            font-size: 16px;
+        #connectBtn {
+            padding: 15px 30px;
+            font-size: 18px;
             cursor: pointer;
-            font-weight: bold;
-            transition: all 0.2s;
-        }
-        
-        #startBtn {
             background-color: #4CAF50;
             color: white;
-        }
-        
-        #startBtn:hover {
-            background-color: #3e8e41;
-        }
-        
-        #stopBtn {
-            background-color: #f44336;
-            color: white;
-        }
-        
-        #stopBtn:hover {
-            background-color: #d32f2f;
-        }
-        
-        #statusIndicator {
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            background-color: #ccc;
-            display: inline-block;
-            margin-right: 10px;
-        }
-        
-        .status {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-        
-        .transcript-container {
-            margin: 20px 0;
-            background-color: #f9f9f9;
-            padding: 15px;
+            border: none;
             border-radius: 5px;
+            align-self: center;
+        }
+        #connectBtn:hover {
+            background-color: #45a049;
+        }
+        #connectBtn:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #finalText {
             border: 1px solid #ddd;
-            min-height: 200px;
-            max-height: 400px;
-            overflow-y: auto;
+            padding: 15px;
+            min-height: 60px;
+            border-radius: 5px;
+            font-size: 16px;
         }
-        
-        .transcript-entry {
+        .audio-section {
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            background-color: #f9f9f9;
+        }
+        .audio-section h3 {
+            margin-top: 0;
             margin-bottom: 10px;
-            padding: 10px;
-            background-color: white;
-            border-radius: 5px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            color: #333;
         }
-        
-        .final-transcript {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #e8f5e9;
-            border-radius: 5px;
-            border: 1px solid #a5d6a7;
-            font-weight: 500;
-        }
-        
-        .recording #statusIndicator {
-            background-color: #f44336;
-            animation: pulse 1.5s infinite;
-        }
-        
-        .tts-section {
-            margin-top: 30px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
-        }
-        
-        .tts-controls {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin: 15px 0;
-        }
-        
-        .text-output {
-            margin: 15px 0;
-            padding: 15px;
-            background-color: #e3f2fd;
-            border-radius: 5px;
-            border: 1px solid #bbdefb;
-            min-height: 100px;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        #ttsStatusIndicator {
-            width: 15px;
-            height: 15px;
-            border-radius: 50%;
-            background-color: #ccc;
-            display: inline-block;
-            margin-right: 10px;
-        }
-        
-        .tts-status {
-            display: flex;
-            align-items: center;
+        #audioPlayer {
+            width: 100%;
             margin-bottom: 10px;
         }
-        
-        .processing {
-            background-color: #fff8e1 !important;
-        }
-        
-        @keyframes pulse {
-            0% {
-                opacity: 1;
-            }
-            50% {
-                opacity: 0.5;
-            }
-            100% {
-                opacity: 1;
-            }
+        #audioStatus {
+            font-style: italic;
+            color: #666;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Speech Transcription with Text-to-Speech</h1>
+        <button id="connectBtn">Connect</button>
         
-        <div class="status">
-            <span id="statusIndicator"></span>
-            <span id="statusText">Ready</span>
+        <div id="finalText">
+            <i>Your processed text will appear here...</i>
         </div>
         
-        <div class="controls">
-            <button id="startBtn">Start Recording</button>
-            <button id="stopBtn" disabled>Stop Recording</button>
-        </div>
-        
-        <div class="transcript-container">
-            <div id="transcriptContent"></div>
-            <div id="finalTranscript" class="final-transcript" style="display: none;">
-                <h3>Final Transcript:</h3>
-                <div id="finalTranscriptText"></div>
-            </div>
-        </div>
-        
-        <div class="tts-section">
-            <h3>Text-to-Speech Output</h3>
-            <div class="tts-status">
-                <span id="ttsStatusIndicator"></span>
-                <span id="ttsStatusText">Ready</span>
-            </div>
-            <div id="text-output" class="text-output"></div>
-            <audio id="audio-player" controls style="width: 100%;"></audio>
+        <div class="audio-section">
+            <h3>Audio Response</h3>
+            <audio id="audioPlayer" controls></audio>
+            <div id="audioStatus">Waiting for audio...</div>
         </div>
     </div>
     
     <script>
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusIndicator = document.getElementById('statusIndicator');
-        const statusText = document.getElementById('statusText');
-        const ttsStatusIndicator = document.getElementById('ttsStatusIndicator');
-        const ttsStatusText = document.getElementById('ttsStatusText');
-        const transcriptContent = document.getElementById('transcriptContent');
-        const finalTranscript = document.getElementById('finalTranscript');
-        const finalTranscriptText = document.getElementById('finalTranscriptText');
-        const textOutput = document.getElementById('text-output');
-        const audioPlayer = document.getElementById('audio-player');
+        // Get the WebSocket URL based on the current page location
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsHost = window.location.host;
+        const WS_URL = `${wsProtocol}//${wsHost}/asr-tts-full-pipeline`;
         
-        // WebSocket connection
-        let socket = null;
-        let mediaRecorder = null;
-        let audioContext = null;
-        let audioStream = null;
-        let isRecording = false;
+        // Elements
+        const connectBtn = document.getElementById('connectBtn');
+        const finalText = document.getElementById('finalText');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioStatus = document.getElementById('audioStatus');
         
-        // TTS variables
-        let audioQueue = [];
-        let isPlaying = false;
-        let eventSource = null;
+        // WebSocket and state
+        let ws = null;
+        let audioChunks = [];
+        let audioBlob = null;
+        let audioUrl = null;
+        let isReceivingTTS = false;
         
-        // Store all transcript chunks
-        let transcriptChunks = [];
-        
-        // New variables for handling final transcription
-        let pendingTranscriptions = false;
-        let finalTranscriptTimer = null;
-        let waitingForFinalResult = false;
-        
-        // Function to clear all ASR-related caches and buffers
-        function clearASRCache() {
-            console.log('Clearing all ASR caches and buffers for a fresh start');
+        // Parse SSE format message
+        function parseSSE(data) {
+            const result = {};
+            const lines = data.split('\n');
             
-            // Clear all transcription data
-            transcriptChunks = [];
-            
-            // Clear all UI elements
-            transcriptContent.innerHTML = '';
-            finalTranscript.style.display = 'none';
-            finalTranscriptText.textContent = '';
-            textOutput.innerHTML = '';
-            audioPlayer.src = '';
-            
-            // Reset all flags
-            waitingForFinalResult = false;
-            pendingTranscriptions = false;
-            
-            // Clear any existing timers
-            if (finalTranscriptTimer) {
-                clearTimeout(finalTranscriptTimer);
-                finalTranscriptTimer = null;
-            }
-            
-            updateStatus('Ready for new recording', 'green');
-        }
-        
-        // Connect to WebSocket server
-        function connectWebSocket() {
-            // Original URL from your code
-            const wsUrl = `ws://${window.location.hostname}:5000`;
-            
-            // For debugging - log the URL we're trying to connect to
-            console.log("Connecting to WebSocket at:", wsUrl);
-            
-            socket = new WebSocket(wsUrl);
-            
-            socket.onopen = function() {
-                console.log('WebSocket connection established');
-                updateStatus('Connected', 'green');
-            };
-            
-            socket.onmessage = function(event) {
-                try {
-                    const response = JSON.parse(event.data);
-                    if (response.text && response.text.trim() !== '') {
-                        // Add to ongoing transcript display
-                        addTranscript(response.text);
-                        
-                        // Store chunk for final result
-                        transcriptChunks.push(response.text);
-                        
-                        // If we're waiting for final results, reset the timer
-                        if (waitingForFinalResult) {
-                            if (finalTranscriptTimer) {
-                                clearTimeout(finalTranscriptTimer);
-                            }
-                            
-                            finalTranscriptTimer = setTimeout(() => {
-                                if (waitingForFinalResult) {
-                                    const finalText = generateFinalTranscript();
-                                    if (finalText) {
-                                        // Automatically start TTS with the final transcript
-                                        startTTSStreaming(finalText);
-                                    }
-                                    waitingForFinalResult = false;
-                                    updateStatus('Connected', 'green');
-                                    
-                                    // Clear all ASR caches and buffers for a fresh start
-                                    clearASRCache();
-                                }
-                            }, 3000); // 4 second timeout
+            for (const line of lines) {
+                if (line.trim() === '') continue;
+                
+                if (line.startsWith('event:')) {
+                    result.event = line.substring(6).trim();
+                } else if (line.startsWith('data:')) {
+                    result.data = line.substring(5).trim();
+                    
+                    // Try to parse data as JSON if it looks like JSON
+                    if (result.data.startsWith('{') || result.data.startsWith('[')) {
+                        try {
+                            result.data = JSON.parse(result.data);
+                        } catch (e) {
+                            // Keep as string if it's not valid JSON
                         }
                     }
-                } catch (error) {
-                    console.error('Error parsing response:', error);
                 }
-            };
+            }
             
-            socket.onclose = function() {
-                console.log('WebSocket connection closed');
-                updateStatus('Disconnected', '#ccc');
-                if (isRecording) {
-                    stopRecording();
-                }
-            };
-            
-            socket.onerror = function(error) {
-                console.error('WebSocket error:', error);
-                updateStatus('Connection Error', 'red');
-            };
+            return result;
         }
         
-        // Start recording audio
-        async function startRecording() {
+        // Extract audio data from SSE message
+        function extractAudioFromSSE(sseData) {
+            const parsed = parseSSE(sseData);
+            
+            if (parsed.event === 'tts' && parsed.data) {
+                // If data is a base64 string
+                if (typeof parsed.data === 'string' && 
+                    (parsed.data.startsWith('data:audio') || 
+                     /^[A-Za-z0-9+/=]+$/.test(parsed.data))) {
+                    
+                    try {
+                        // Try to decode base64
+                        const binary = atob(parsed.data.replace(/^data:audio\/[^;]+;base64,/, ''));
+                        const array = new Uint8Array(binary.length);
+                        for (let i = 0; i < binary.length; i++) {
+                            array[i] = binary.charCodeAt(i);
+                        }
+                        return new Blob([array], { type: 'audio/wav' });
+                    } catch (e) {
+                        console.error(`Error decoding base64: ${e}`);
+                    }
+                }
+                
+                // If it's just raw data, convert to blob
+                return new Blob([parsed.data], { type: 'audio/wav' });
+            }
+            
+            // For SSE messages that don't contain audio data
+            return null;
+        }
+        
+        // Process audio chunks into a playable audio element
+        function processAudioChunks() {
             try {
-                // Clear all ASR-related caches and start fresh
-                clearASRCache();
+                // Create a blob from all the chunks
+                audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
                 
-                // Request audio stream
-                audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                // Create an object URL for the blob
+                if (audioUrl) {
+                    URL.revokeObjectURL(audioUrl);
+                }
+                audioUrl = URL.createObjectURL(audioBlob);
                 
-                // Create audio context
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                // Set the audio source
+                audioPlayer.src = audioUrl;
+                audioStatus.textContent = "Audio ready. Press play to listen.";
                 
-                // Connect and set up recording
-                const source = audioContext.createMediaStreamSource(audioStream);
-                const processor = audioContext.createScriptProcessor(4096, 1, 1);
-                
-                // Connect nodes
-                source.connect(processor);
-                processor.connect(audioContext.destination);
-                
-                // Set recording flag
-                isRecording = true;
-                document.body.classList.add('recording');
-                
-                // Update UI
-                startBtn.disabled = true;
-                stopBtn.disabled = false;
-                updateStatus('Recording', 'red');
-                
-                // Process audio data
-                processor.onaudioprocess = function(e) {
-                    if (!isRecording) return;
-                    
-                    const inputData = e.inputBuffer.getChannelData(0);
-                    
-                    // Convert float32 to int16
-                    const pcmData = new Int16Array(inputData.length);
-                    for (let i = 0; i < inputData.length; i++) {
-                        pcmData[i] = Math.min(1, Math.max(-1, inputData[i])) * 0x7FFF;
-                    }
-                    
-                    // Send audio data to server if connection is open
-                    if (socket && socket.readyState === WebSocket.OPEN) {
-                        socket.send(pcmData.buffer);
-                    }
-                };
+                // Autoplay the audio
+                audioPlayer.play().then(() => {
+                    audioStatus.textContent = "Playing audio...";
+                }).catch(e => {
+                    console.error(`Autoplay prevented: ${e}`);
+                });
                 
             } catch (error) {
-                console.error('Error starting recording:', error);
-                updateStatus('Recording Error', 'red');
+                console.error(`Error processing audio: ${error}`);
+                audioStatus.textContent = "Error processing audio.";
             }
         }
         
-        // Stop recording
-        function stopRecording() {
-            if (!isRecording) return;
+        // Connect to WebSocket
+        function connect() {
+            connectBtn.disabled = true;
+            connectBtn.textContent = "Connected";
+            finalText.innerHTML = "<i>Listening...</i>";
+            audioStatus.textContent = "Waiting for speech...";
             
-            isRecording = false;
-            document.body.classList.remove('recording');
+            ws = new WebSocket(WS_URL);
             
-            // Stop all tracks in the audio stream
-            if (audioStream) {
-                audioStream.getTracks().forEach(track => track.stop());
-                audioStream = null;
-            }
-            
-            // Close audio context
-            if (audioContext) {
-                if (audioContext.state !== 'closed') {
-                    audioContext.close();
-                }
-                audioContext = null;
-            }
-            
-            // Update UI
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-            updateStatus('Waiting for final results...', 'orange');
-            
-            // Set the waiting flag and start a timer to generate final transcript
-            // if no more transcriptions arrive after a certain period
-            waitingForFinalResult = true;
-            
-            if (finalTranscriptTimer) {
-                clearTimeout(finalTranscriptTimer);
-            }
-            
-            finalTranscriptTimer = setTimeout(() => {
-                // If no new transcriptions have come in the last 4 seconds, consider it complete
-                if (waitingForFinalResult) {
-                    const finalText = generateFinalTranscript();
-                    if (finalText) {
-                        // Automatically start TTS with the final transcript
-                        startTTSStreaming(finalText);
-                    }
-                    waitingForFinalResult = false;
-                    updateStatus('Connected', 'green');
-                    
-                    // Clear all ASR caches and buffers for a fresh start
-                    clearASRCache();
-                }
-            }, 3000); // 4 second timeout
-        }
-        
-        // Generate and display the final transcript
-        function generateFinalTranscript() {
-            if (transcriptChunks.length === 0) return null;
-            
-            // Just use the last (most complete) transcript chunk instead of joining all chunks
-            const finalText = transcriptChunks[transcriptChunks.length - 1];
-            
-            // Display the final transcript
-            finalTranscriptText.textContent = finalText;
-            finalTranscript.style.display = 'block';
-            
-            // Scroll to final transcript
-            finalTranscript.scrollIntoView({ behavior: 'smooth' });
-            
-            // Return the final text for TTS processing
-            return finalText;
-        }
-        
-        // Add transcript to the display
-        function addTranscript(text) {
-            const entry = document.createElement('div');
-            entry.className = 'transcript-entry';
-            
-            // If we're waiting for the final result, highlight this entry
-            if (waitingForFinalResult) {
-                entry.classList.add('processing');
-                entry.textContent = text + " (processing...)";
-            } else {
-                entry.textContent = text;
-            }
-            
-            transcriptContent.appendChild(entry);
-            
-            // Scroll to bottom
-            transcriptContent.scrollTop = transcriptContent.scrollHeight;
-        }
-        
-        // Update status display
-        function updateStatus(text, color) {
-            statusText.textContent = text;
-            statusIndicator.style.backgroundColor = color;
-        }
-        
-        // Update TTS status display
-        function updateTTSStatus(text, color) {
-            ttsStatusText.textContent = text;
-            ttsStatusIndicator.style.backgroundColor = color;
-        }
-        
-        // TTS Functions
-        function startTTSStreaming(text) {
-            if (eventSource) {
-                eventSource.close(); // Close any existing connection
-            }
-            
-            if (!text) {
-                console.error('No text to convert to speech');
-                return;
-            }
-            
-            // Clear previous TTS output
-            textOutput.innerHTML = '';
-            audioPlayer.src = '';
-            audioQueue = [];
-            isPlaying = false;
-            
-            updateTTSStatus('Processing...', 'blue');
-            
-            // Connect to the FastAPI backend running on port 8000
-            const backendUrl = `http://${window.location.hostname}:8000/stream-tts?query=${encodeURIComponent(text)}`;
-            eventSource = new EventSource(backendUrl);
-            
-            eventSource.onopen = () => {
-                console.log('EventSource connected');
-                updateTTSStatus('TTS Streaming Active', '#2196F3');
+            ws.onopen = () => {
+                console.log("WebSocket connected");
             };
             
-            eventSource.addEventListener('ttsUpdate', function (event) {
-                try {
-                    const data = JSON.parse(event.data);
-                    console.log('TTS Update received');
-                    updateTTS(data);
-                } catch (error) {
-                    console.error('Error parsing TTS update:', error);
-                }
-            });
-            
-            eventSource.onerror = (error) => {
-                console.error('EventSource failed:', error);
-                eventSource.close();
-                // Immediately update status without waiting
-                updateTTSStatus('Ready', '#ccc');
-            };
-        }
-        
-        function updateTTS(data) {
-            // Display the text chunk from the backend
-            const paragraph = document.createElement('p');
-            paragraph.textContent = data.text;
-            textOutput.appendChild(paragraph);
-            
-            // Scroll text output to bottom
-            textOutput.scrollTop = textOutput.scrollHeight;
-            
-            // Process the audio data
-            const audioBytes = hexToBytes(data.audio);
-            const blob = new Blob([audioBytes], { type: 'audio/mp3' });
-            const audioUrl = URL.createObjectURL(blob);
-            
-            // Add to queue with duration information from backend
-            audioQueue.push({ 
-                url: audioUrl, 
-                duration: data.duration 
-            });
-            
-            // Play audio if not already playing
-            playNextAudio();
-        }
-        
-        function playNextAudio() {
-            if (isPlaying || audioQueue.length === 0) return;
-            
-            isPlaying = true;
-            const nextAudio = audioQueue.shift();
-            audioPlayer.src = nextAudio.url;
-            
-            audioPlayer.play().then(() => {
-                audioPlayer.onended = () => {
-                    URL.revokeObjectURL(audioPlayer.src);
-                    isPlaying = false;
-                    
-                    if (audioQueue.length > 0) {
-                        playNextAudio();
-                    } else if (eventSource && eventSource.readyState === EventSource.CLOSED) {
-                        // Immediately update status without waiting
-                        updateTTSStatus('Ready', '#ccc');
-                    }
-                };
-            }).catch(error => {
-                console.error('Audio playback failed:', error);
-                isPlaying = false;
-                playNextAudio();
-            });
-        }
-        
-        function hexToBytes(hex) {
-            const bytes = new Uint8Array(hex.length / 2);
-            for (let i = 0; i < hex.length; i += 2) {
-                bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
-            }
-            return bytes;
-        }
-        
-        // Event listeners
-        startBtn.addEventListener('click', function() {
-            if (!socket || socket.readyState !== WebSocket.OPEN) {
-                connectWebSocket();
+            ws.onclose = () => {
+                connectBtn.disabled = false;
+                connectBtn.textContent = "Connect";
+                audioStatus.textContent = "Disconnected. Click 'Connect' to start.";
                 
-                // Increase timeout to 3 seconds to give more time for connection
-                setTimeout(() => {
-                    if (socket && socket.readyState === WebSocket.OPEN) {
-                        startRecording();
-                    } else {
-                        console.error("WebSocket connection failed. Current state:", socket ? socket.readyState : "No socket");
-                        updateStatus('Connection Failed', 'red');
+                // Reset audio player
+                if (audioUrl) {
+                    URL.revokeObjectURL(audioUrl);
+                    audioUrl = null;
+                }
+                audioPlayer.src = '';
+            };
+            
+            ws.onerror = (error) => {
+                console.error(`WebSocket error: ${error}`);
+                finalText.innerHTML = "<i>Connection error. Please try again.</i>";
+                audioStatus.textContent = "Connection error.";
+                connectBtn.disabled = false;
+                connectBtn.textContent = "Connect";
+            };
+            
+            ws.onmessage = async (event) => {
+                // Handle binary data (directly usable audio chunks)
+                if (event.data instanceof Blob) {
+                    if (isReceivingTTS) {
+                        audioChunks.push(event.data);
+                        audioStatus.textContent = `Receiving audio: ${audioChunks.length} chunks...`;
                     }
-                }, 3000); // Increased from 1000ms to 3000ms
-            } else {
-                startRecording();
-            }
-        });
-        
-        stopBtn.addEventListener('click', function() {
-            stopRecording();
-        });
-        
-        window.addEventListener('load', function() {
-            connectWebSocket();
-            updateTTSStatus('Ready', '#ccc');
-        });
-        
-        // Handle page unload
-        window.addEventListener('beforeunload', function() {
-            if (isRecording) {
-                stopRecording();
-            }
+                    return;
+                }
+                
+                // Handle text data - could be JSON or SSE format
+                if (typeof event.data === 'string') {
+                    // Check if it's SSE format
+                    if (event.data.trim().startsWith('event:') || event.data.trim().startsWith('data:')) {
+                        console.log(`Received SSE formatted data`);
+                        
+                        // If we're actively receiving TTS data, extract the audio
+                        if (isReceivingTTS) {
+                            const audioBlob = extractAudioFromSSE(event.data);
+                            if (audioBlob) {
+                                audioChunks.push(audioBlob);
+                                audioStatus.textContent = `Receiving audio: ${audioChunks.length} chunks...`;
+                                return;
+                            }
+                        }
+                        
+                        // Try to parse the SSE message if it's not audio data
+                        const sseMessage = parseSSE(event.data);
+                        
+                        // Handle specific SSE events
+                        if (sseMessage.event === 'tts_complete' || sseMessage.event === 'complete') {
+                            isReceivingTTS = false;
+                            audioStatus.textContent = "Processing audio...";
+                            
+                            if (audioChunks.length > 0) {
+                                processAudioChunks();
+                            } else {
+                                audioStatus.textContent = "No audio received.";
+                            }
+                        }
+                        
+                        return;
+                    }
+                    
+                    // Try to parse as JSON
+                    try {
+                        const message = JSON.parse(event.data);
+                        
+                        switch(message.type) {
+                            case 'transcription':
+                                finalText.innerHTML = `<i>Transcribing: "${message.data}"</i>`;
+                                break;
+                                
+                            case 'response':
+                                // This is the final processed text
+                                finalText.textContent = message.data;
+                                break;
+                                
+                            case 'tts_starting':
+                                isReceivingTTS = true;
+                                audioStatus.textContent = "Generating audio...";
+                                // Reset any previous audio
+                                audioChunks = [];
+                                if (audioUrl) {
+                                    URL.revokeObjectURL(audioUrl);
+                                    audioUrl = null;
+                                }
+                                audioPlayer.src = '';
+                                break;
+                                
+                            case 'tts_complete':
+                                isReceivingTTS = false;
+                                audioStatus.textContent = "Processing audio...";
+                                
+                                // Process received audio chunks
+                                if (audioChunks.length > 0) {
+                                    processAudioChunks();
+                                } else {
+                                    audioStatus.textContent = "No audio received.";
+                                }
+                                break;
+                                
+                            case 'error':
+                                audioStatus.textContent = `Error: ${message.data}`;
+                                break;
+                        }
+                        
+                    } catch (error) {
+                        // If it's not valid JSON and not SSE, log the error
+                        console.error(`Error processing message: ${error}`);
+                    }
+                }
+            };
             
-            if (socket) {
-                socket.close();
-            }
+            // Add audio player event listeners
+            audioPlayer.addEventListener('play', () => {
+                audioStatus.textContent = "Playing audio...";
+            });
             
-            if (eventSource) {
-                eventSource.close();
-            }
-        });
+            audioPlayer.addEventListener('pause', () => {
+                audioStatus.textContent = "Audio paused.";
+            });
+            
+            audioPlayer.addEventListener('ended', () => {
+                audioStatus.textContent = "Audio playback complete.";
+            });
+        }
+        
+        // Connect button event listener
+        connectBtn.addEventListener('click', connect);
     </script>
 </body>
 </html>

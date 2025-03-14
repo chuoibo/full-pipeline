@@ -24,4 +24,4 @@ echo "Starting API server..."
 echo "Host: $HOST, Port: $PORT"
 HOST=${HOST:-0.0.0.0}
 PORT=${PORT:-8000}
-uvicorn backend.app:app --host "$HOST" --port "$PORT"
+uvicorn backend.tts:app --host "$HOST" --port "$PORT"

@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY script/dev.sh ./script/
 
 COPY backend/asr.py ./backend/
-COPY backend/app.py ./backend/
+COPY backend/tts.py ./backend/
 
 COPY frontend/index.html ./frontend/
 

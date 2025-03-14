@@ -1,111 +1,138 @@
 import asyncio
-import os
-import json
-from fastapi import FastAPI, Query
-from fastapi.responses import StreamingResponse
-from fastapi.middleware.cors import CORSMiddleware
-from google import genai
-from pydub import AudioSegment
-import edge_tts
+import logging
 import re
-import time
-from io import BytesIO
-from dotenv import load_dotenv
+import requests
 import uvicorn
 from fastapi.staticfiles import StaticFiles
-import logging
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
+
+from backend.tts import text_to_speech_stream
+from backend.client import ASRClient
 
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[logging.StreamHandler()]
 )
-logger = logging.getLogger('tts_server')
-
-load_dotenv()
+logger = logging.getLogger('full_pipeline')
 
 app = FastAPI()
-app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-def preprocess_text(text):    
-    text = re.sub(r'\bunk\b', '', text)
-    return text
+app.mount("/frontend", StaticFiles(directory="frontend", html=True), name="frontend")
 
-def gemini_text_generator(query: str):
-    # Start timing when Gemini receives the query
-    logging.info(f"Received query: {query}")
-    client = genai.Client(api_key=os.getenv('GOOGLE_API_KEY'), vertexai=False)
-    chat = client.chats.create(model="gemini-2.0-flash-001")
-    
-    pattern = re.compile(r'[.!?:]\s*')
-    
-    preprocess_query = preprocess_text(query)
-    
-    buffer = ""
-    
-    for chunk in chat.send_message_stream(preprocess_query):
-        clean_text = chunk.text.replace("*", "")
-        buffer += clean_text
-        
-        while True:
-            match = pattern.search(buffer)
-            
-            if match:
-                sentence = buffer[:match.end()].strip()
-                yield sentence
-                buffer = buffer[match.end():]
-            else:
-                break
-    
-    if buffer.strip():
-        yield buffer.strip()
 
-async def text_to_speech_stream(query: str):
-    voice = "vi-VN-HoaiMyNeural"
-    
-    gen_text = gemini_text_generator(query)
-    
-    for chunk in gen_text:
-        
-        if not chunk or not chunk.strip():
-            continue
-        
-        start_time_chunk = time.time()
-        communicate = edge_tts.Communicate(chunk, voice)
-        audio_data = bytearray()
-        async for tts_chunk in communicate.stream():
-            if tts_chunk["type"] == "audio":
-                audio_data.extend(tts_chunk["data"])
-    
-        
-        audio_segment = AudioSegment.from_mp3(BytesIO(audio_data))
-        duration_seconds = len(audio_segment) / 1000.0
- 
-        processing_time = time.time() - start_time_chunk
-        
-        sleep_time = max(0, duration_seconds - processing_time)
-        
-        data = {
-            "text": chunk,
-            "audio": audio_data.hex(),
-            "duration": sleep_time
-        }
-        yield f"event: ttsUpdate\ndata: {json.dumps(data)}\n\n"
-        
-        await asyncio.sleep(sleep_time)
- 
+active_asr_clients = {}
+
+@app.get("/response")
+def receive_response(query: str = Query(...)):
+    """Process the query and return a response."""
+    logger.info(f"Received query: {query}")
+    processed_query = re.sub(r'\bunk\b', '', query)
+    return processed_query
 
 @app.get("/stream-tts")
 async def stream_tts(query: str = Query(..., description="The query to process")):
     return StreamingResponse(text_to_speech_stream(query), media_type="text/event-stream")
 
+
+@app.websocket("/asr-tts-full-pipeline")
+async def asr_tts_full_pipeline(websocket: WebSocket):
+    """WebSocket endpoint for complete end-to-end ASR → Process → TTS pipeline"""
+    await websocket.accept()
+    client_id = id(websocket)
+    
+    logger.info(f"WebSocket connection established for client {client_id}")
+    
+    asr_client = ASRClient('ws://localhost:5000')
+    active_asr_clients[client_id] = asr_client
+    
+    async def process_transcription_and_generate_tts(text):
+        if not text:
+            return
+            
+        await websocket.send_json({
+            "type": "transcription",
+            "data": text
+        })
+        
+        processed_text = receive_response(query=text)
+        
+        await websocket.send_json({
+            "type": "response",
+            "data": processed_text
+        })
+        
+        await websocket.send_json({
+            "type": "tts_starting",
+            "data": "Starting TTS audio stream"
+        })
+        
+        try:
+            tts_stream = text_to_speech_stream(processed_text)
+            
+            async for chunk in tts_stream:
+                await websocket.send_bytes(chunk)
+            
+            await websocket.send_json({
+                "type": "tts_complete",
+                "data": "TTS audio stream complete"
+            })
+            
+        except Exception as e:
+            logger.error(f"Error generating TTS: {e}")
+            await websocket.send_json({
+                "type": "error",
+                "data": f"TTS generation error: {str(e)}"
+            })
+        
+    try:
+        if not await asr_client.connect():
+            await websocket.send_json({
+                "type": "error",
+                "data": "Failed to connect to ASR server"
+            })
+            return
+            
+        asr_client.set_transcription_callback(process_transcription_and_generate_tts)
+        
+        await asr_client.start_streaming()
+        
+        await websocket.send_json({
+            "type": "status",
+            "data": "ready"
+        })
+        
+        await asr_client.listen_continuously()
+            
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for client {client_id}")
+    except Exception as e:
+        logger.error(f"Error in ASR-TTS pipeline: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "data": str(e)
+            })
+        except:
+            pass
+    finally:
+        # Clean up
+        if client_id in active_asr_clients:
+            await asr_client.stop_streaming()
+            await asr_client.disconnect()
+            del active_asr_clients[client_id]
+            logger.info(f"Cleaned up resources for client {client_id}")
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

@@ -25,9 +25,12 @@ class ASRWebSocketServer:
         self.clients = {}
         self.executors = {}  
         self.loops = {}
+
+        self.current_transcription = None
+        self.reset_session = False
         
         self.processing_interval = 1.0
-        self.silence_threshold = 1.0
+        self.silence_threshold = 5.0
 
     @staticmethod
     def create_wav_header(sample_rate, channels, bits_per_sample, data_length):
@@ -67,8 +70,13 @@ class ASRWebSocketServer:
                 try:
                     response_json = json.loads(response)
                     if "text" in response_json:
-                        logger.info(f"Speech recognized for client {client_id}: {response_json['text']}")
-                        await websocket.send(json.dumps(response_json))
+                        final_response = {
+                            "text": response_json["text"],
+                            "reset_session": self.reset_session
+                        }
+                        self.current_transcription = response_json['text']
+                        logger.info(f"Speech recognized for client {client_id}: {final_response['text']}")
+                        await websocket.send(json.dumps(final_response))
                         logger.info(f"Sent transcription to client {client_id}")
                     else:
                         logger.warning(f"Unexpected response format: {response_json}")
@@ -147,13 +155,10 @@ class ASRWebSocketServer:
                             
                             client['last_process_time'] = current_time
                     else:
-                        logging.info('No speech detected ...')
                         if client['speech_detected']:
                             if client['silence_start_time'] is None:
                                 client['silence_start_time'] = current_time
                             
-                            logging.info(f"Silence time: {current_time - client['silence_start_time']}s")
-
                             if (current_time - client['silence_start_time'] >= self.silence_threshold):
                                 logger.debug(f"Silence detected for {self.silence_threshold}s, resetting buffer for client {client_id}")
                                 client['speech_detected'] = False
@@ -161,10 +166,21 @@ class ASRWebSocketServer:
                                 client['speech_start_time'] = None
                                 client['last_speech_time'] = None
                                 client['silence_start_time'] = None
+
+                                self.reset_session = True
+
+                                response = {
+                                    "text": self.current_transcription,
+                                    "reset_session": self.reset_session
+                                }
+
+                                await websocket.send(json.dumps(response))
+
+                                self.reset_session = False
+                                logger.info(f"Sent reset session")
                             else:
                                 client['speech_buffer'].extend(message)
-                                
-                        
+            
                 except Exception as e:
                     logger.error(f"Error processing frame: {e}")
                 
@@ -195,7 +211,7 @@ class ASRWebSocketServer:
             self.host, 
             self.port
         )
-        
+
         logger.info(f"Realtime ASR WebSocket server started at ws://{self.host}:{self.port}")
         
         await server.wait_closed()
